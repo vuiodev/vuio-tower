@@ -14,14 +14,14 @@ Ensure you have the following installed on your system:
 
 The desktop app expects the backend `vuio` server binary to be placed in `src-tauri/binaries` with the system's target triple suffix.
 
-From the repository root (where the backend is located), build the backend and copy it into the GUI sidecars directory:
+From the backend repository root (where the backend is located), build the backend and copy it into the VuIO Tower sidecars directory (which is in the sibling `vuio-tower` directory):
 
 ```bash
 # 1. Build the backend
 cargo build --bin vuio
 
 # 2. Copy the binary to the Tauri sidecar folder with the correct host target triple
-cp target/debug/vuio gui/src-tauri/binaries/vuio-$(rustc -Vv | grep host | cut -d' ' -f2)
+cp target/debug/vuio ../vuio-tower/src-tauri/binaries/vuio-$(rustc -Vv | grep host | cut -d' ' -f2)
 ```
 
 ### 2. Run the Desktop App
@@ -29,13 +29,13 @@ cp target/debug/vuio gui/src-tauri/binaries/vuio-$(rustc -Vv | grep host | cut -
 You can run the Tauri application either using Cargo directly or through the Tauri CLI.
 
 #### Option A: Run using Cargo (Directly)
-From the `gui/src-tauri` directory:
+From the `src-tauri` directory:
 ```bash
 cargo run
 ```
 
 #### Option B: Run using Tauri CLI (Recommended for development)
-First, ensure frontend dependencies are installed. From the `gui/` directory:
+First, ensure frontend dependencies are installed. From the root directory:
 ```bash
 npm install
 npm run tauri dev
@@ -47,7 +47,7 @@ npm run tauri dev
 
 - **Config Location**: On startup, the sidecar creates/uses a default configuration file at `~/Library/Application Support/vuio/config.toml` (macOS) or the standard Linux config path.
 - **Port**: The default UI port is `8080`.
-- **Sidecar Permissions**: Sidecar execution permissions are configured in `gui/src-tauri/capabilities/default.json`.
+- **Sidecar Permissions**: Sidecar execution permissions are configured in `src-tauri/capabilities/default.json`.
 
 ## Contributing
 
