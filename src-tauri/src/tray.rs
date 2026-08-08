@@ -1,8 +1,8 @@
+use std::sync::RwLock;
 use tauri::menu::{Menu, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
-use std::sync::RwLock;
 
 pub struct LibraryStats {
     pub total_files: usize,
@@ -104,9 +104,7 @@ pub fn build_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, tauri::Err
         .id("settings")
         .build(app)?;
 
-    let quit_item = MenuItemBuilder::new("Quit")
-        .id("quit")
-        .build(app)?;
+    let quit_item = MenuItemBuilder::new("Quit").id("quit").build(app)?;
 
     Menu::with_items(
         app,
@@ -145,7 +143,7 @@ pub fn start_stats_updater(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-            
+
             let state = app.state::<AppState>();
             if !state.service.is_running() {
                 continue;
@@ -158,10 +156,12 @@ pub fn start_stats_updater(app: tauri::AppHandle) {
             if let Ok(resp) = client.get(&url).send().await {
                 if let Ok(val) = resp.json::<serde_json::Value>().await {
                     if let Some(db_stats) = val.get("database_stats") {
-                        let total_files = db_stats.get("total_files")
+                        let total_files = db_stats
+                            .get("total_files")
                             .and_then(|f| f.as_u64())
                             .unwrap_or(0) as usize;
-                        let total_size_bytes = db_stats.get("total_size_bytes")
+                        let total_size_bytes = db_stats
+                            .get("total_size_bytes")
                             .and_then(|s| s.as_u64())
                             .unwrap_or(0);
 
@@ -170,7 +170,7 @@ pub fn start_stats_updater(app: tauri::AppHandle) {
                             stats.total_files = total_files;
                             stats.total_size_bytes = total_size_bytes;
                         }
-                        
+
                         update_tray_menu(&app);
                     }
                 }
@@ -192,18 +192,24 @@ pub fn create_tray(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
                 let _ = app.opener().open_url(url, None::<String>);
             }
             "start_server" => {
-                let state = app.state::<AppState>();
-                if let Err(e) = state.service.start(app) {
-                    eprintln!("Failed to start server: {}", e);
-                }
-                update_tray_menu(app);
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = app.state::<AppState>();
+                    if let Err(error) = state.service.start().await {
+                        eprintln!("Failed to start server: {error}");
+                    }
+                    update_tray_menu(&app);
+                });
             }
             "stop_server" => {
-                let state = app.state::<AppState>();
-                if let Err(e) = state.service.stop() {
-                    eprintln!("Failed to stop server: {}", e);
-                }
-                update_tray_menu(app);
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = app.state::<AppState>();
+                    if let Err(error) = state.service.stop().await {
+                        eprintln!("Failed to stop server: {error}");
+                    }
+                    update_tray_menu(&app);
+                });
             }
             "trigger_scan" => {
                 let port = get_configured_port();
@@ -222,22 +228,21 @@ pub fn create_tray(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
                     .buttons(tauri_plugin_dialog::MessageDialogButtons::YesNo)
                     .show(move |confirmed| {
                         if confirmed {
-                            let state = app_clone.state::<AppState>();
-                            let _ = state.service.stop();
-                            let (_, db_path, _) = crate::service::get_vuio_paths();
-                            if db_path.exists() {
-                                let _ = std::fs::remove_file(db_path);
-                            }
-                            let _ = state.service.start(&app_clone);
-                            
-                            // Reset local stats count immediately
-                            {
-                                let mut stats = state.stats.write().unwrap();
-                                stats.total_files = 0;
-                                stats.total_size_bytes = 0;
-                            }
-                            
-                            update_tray_menu(&app_clone);
+                            tauri::async_runtime::spawn(async move {
+                                let state = app_clone.state::<AppState>();
+                                let _ = state.service.stop().await;
+                                let (_, db_path, _) = crate::service::get_vuio_paths();
+                                if db_path.exists() {
+                                    let _ = std::fs::remove_file(db_path);
+                                }
+                                let _ = state.service.start().await;
+                                {
+                                    let mut stats = state.stats.write().unwrap();
+                                    stats.total_files = 0;
+                                    stats.total_size_bytes = 0;
+                                }
+                                update_tray_menu(&app_clone);
+                            });
                         }
                     });
             }
@@ -245,9 +250,12 @@ pub fn create_tray(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
                 open_settings_window(app);
             }
             "quit" => {
-                let state = app.state::<AppState>();
-                let _ = state.service.stop();
-                app.exit(0);
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = app.state::<AppState>();
+                    let _ = state.service.stop().await;
+                    app.exit(0);
+                });
             }
             _ => {}
         })

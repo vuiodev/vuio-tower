@@ -6,17 +6,6 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "shell:default",
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "binaries/vuio",
-          "sidecar": true,
-          "args": true
-        }
-      ]
-    },
     "dialog:default"
   ]
 }
