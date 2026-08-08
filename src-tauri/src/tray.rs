@@ -1,7 +1,7 @@
 use std::sync::RwLock;
-use tauri::menu::{Menu, MenuItemBuilder, PredefinedMenuItem};
+use tauri::menu::{Menu, MenuItem, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 pub struct LibraryStats {
@@ -9,9 +9,21 @@ pub struct LibraryStats {
     pub total_size_bytes: u64,
 }
 
+#[derive(Clone)]
+pub struct TrayMenuItems {
+    status: MenuItem<tauri::Wry>,
+    library: MenuItem<tauri::Wry>,
+    open_dashboard: MenuItem<tauri::Wry>,
+    start_server: MenuItem<tauri::Wry>,
+    stop_server: MenuItem<tauri::Wry>,
+    trigger_scan: MenuItem<tauri::Wry>,
+    reset_db: MenuItem<tauri::Wry>,
+}
+
 pub struct AppState {
     pub service: crate::service::ServiceState,
     pub stats: RwLock<LibraryStats>,
+    pub tray_menu: RwLock<Option<TrayMenuItems>>,
 }
 
 pub fn get_configured_port() -> u16 {
@@ -43,61 +55,83 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-pub fn build_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
-    let state = app.state::<AppState>();
-    let is_running = state.service.is_running();
-    let port = get_configured_port();
+struct TrayMenuState {
+    status_text: String,
+    library_text: String,
+    is_running: bool,
+}
 
+fn tray_menu_state(
+    is_running: bool,
+    port: u16,
+    total_files: usize,
+    total_size_bytes: u64,
+) -> TrayMenuState {
     let status_text = if is_running {
-        format!("Status: Running (Port {})", port)
+        format!("Status: Running (Port {port})")
     } else {
         "Status: Stopped".to_string()
     };
-
-    let status_item = MenuItemBuilder::new(status_text)
-        .id("status")
-        .enabled(false)
-        .build(app)?;
-
-    let (files_count, size_formatted) = {
-        let stats = state.stats.read().unwrap();
-        (stats.total_files, format_size(stats.total_size_bytes))
-    };
-
     let library_text = if is_running {
-        format!("Library: {} files ({})", files_count, size_formatted)
+        format!(
+            "Library: {total_files} files ({})",
+            format_size(total_size_bytes)
+        )
     } else {
         "Library: Offline".to_string()
     };
 
-    let library_item = MenuItemBuilder::new(library_text)
+    TrayMenuState {
+        status_text,
+        library_text,
+        is_running,
+    }
+}
+
+fn current_tray_menu_state(app: &tauri::AppHandle) -> TrayMenuState {
+    let state = app.state::<AppState>();
+    let is_running = state.service.is_running();
+    let port = get_configured_port();
+    let stats = state.stats.read().unwrap();
+    tray_menu_state(is_running, port, stats.total_files, stats.total_size_bytes)
+}
+
+fn build_menu(app: &tauri::AppHandle) -> Result<(Menu<tauri::Wry>, TrayMenuItems), tauri::Error> {
+    let menu_state = current_tray_menu_state(app);
+
+    let status_item = MenuItemBuilder::new(&menu_state.status_text)
+        .id("status")
+        .enabled(false)
+        .build(app)?;
+
+    let library_item = MenuItemBuilder::new(&menu_state.library_text)
         .id("library")
         .enabled(false)
         .build(app)?;
 
     let open_item = MenuItemBuilder::new("Open Dashboard")
         .id("open_dashboard")
-        .enabled(is_running)
+        .enabled(menu_state.is_running)
         .build(app)?;
 
     let start_item = MenuItemBuilder::new("Start Server")
         .id("start_server")
-        .enabled(!is_running)
+        .enabled(!menu_state.is_running)
         .build(app)?;
 
     let stop_item = MenuItemBuilder::new("Stop Server")
         .id("stop_server")
-        .enabled(is_running)
+        .enabled(menu_state.is_running)
         .build(app)?;
 
     let scan_item = MenuItemBuilder::new("Trigger Media Scan")
         .id("trigger_scan")
-        .enabled(is_running)
+        .enabled(menu_state.is_running)
         .build(app)?;
 
     let reset_item = MenuItemBuilder::new("Reset Database...")
         .id("reset_db")
-        .enabled(is_running)
+        .enabled(menu_state.is_running)
         .build(app)?;
 
     let settings_item = MenuItemBuilder::new("Settings...")
@@ -106,7 +140,7 @@ pub fn build_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, tauri::Err
 
     let quit_item = MenuItemBuilder::new("Quit").id("quit").build(app)?;
 
-    Menu::with_items(
+    let menu = Menu::with_items(
         app,
         &[
             &status_item,
@@ -121,21 +155,51 @@ pub fn build_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, tauri::Err
             &PredefinedMenuItem::separator(app)?,
             &quit_item,
         ],
-    )
+    )?;
+    let items = TrayMenuItems {
+        status: status_item,
+        library: library_item,
+        open_dashboard: open_item,
+        start_server: start_item,
+        stop_server: stop_item,
+        trigger_scan: scan_item,
+        reset_db: reset_item,
+    };
+
+    Ok((menu, items))
 }
 
 pub fn update_tray_menu(app: &tauri::AppHandle) {
-    if let Some(tray) = app.tray_by_id("main") {
-        if let Ok(menu) = build_menu(app) {
-            let _ = tray.set_menu(Some(menu));
+    let menu_state = current_tray_menu_state(app);
+    let items = app.state::<AppState>().tray_menu.read().unwrap().clone();
+    let Some(items) = items else {
+        return;
+    };
+
+    let updates = [
+        items.status.set_text(menu_state.status_text),
+        items.library.set_text(menu_state.library_text),
+        items.open_dashboard.set_enabled(menu_state.is_running),
+        items.start_server.set_enabled(!menu_state.is_running),
+        items.stop_server.set_enabled(menu_state.is_running),
+        items.trigger_scan.set_enabled(menu_state.is_running),
+        items.reset_db.set_enabled(menu_state.is_running),
+    ];
+    for result in updates {
+        if let Err(error) = result {
+            eprintln!("Failed to update tray menu item: {error}");
         }
     }
 }
 
 pub fn open_settings_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let was_visible = window.is_visible().unwrap_or(false);
         let _ = window.show();
         let _ = window.set_focus();
+        if !was_visible {
+            let _ = window.emit("settings-opened", ());
+        }
     }
 }
 
@@ -180,9 +244,9 @@ pub fn start_stats_updater(app: tauri::AppHandle) {
 }
 
 pub fn create_tray(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
-    let menu = build_menu(app)?;
+    let (menu, items) = build_menu(app)?;
 
-    let _tray = TrayIconBuilder::with_id("main")
+    TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().cloned().unwrap())
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -261,5 +325,36 @@ pub fn create_tray(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
         })
         .build(app)?;
 
+    *app.state::<AppState>().tray_menu.write().unwrap() = Some(items);
+    update_tray_menu(app);
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_size, tray_menu_state};
+
+    #[test]
+    fn formats_library_sizes() {
+        assert_eq!(format_size(512), "0.50 KB");
+        assert_eq!(format_size(1024 * 1024), "1.00 MB");
+        assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.00 GB");
+    }
+
+    #[test]
+    fn running_menu_state_includes_port_and_library_stats() {
+        let state = tray_menu_state(true, 9090, 12, 3 * 1024 * 1024);
+        assert_eq!(state.status_text, "Status: Running (Port 9090)");
+        assert_eq!(state.library_text, "Library: 12 files (3.00 MB)");
+        assert!(state.is_running);
+    }
+
+    #[test]
+    fn stopped_menu_state_is_offline() {
+        let state = tray_menu_state(false, 9090, 12, 3 * 1024 * 1024);
+        assert_eq!(state.status_text, "Status: Stopped");
+        assert_eq!(state.library_text, "Library: Offline");
+        assert!(!state.is_running);
+    }
 }

@@ -213,6 +213,7 @@ pub fn run() {
                 total_files: 0,
                 total_size_bytes: 0,
             }),
+            tray_menu: std::sync::RwLock::new(None),
         })
         .setup(|app| {
             let handle = app.handle().clone();

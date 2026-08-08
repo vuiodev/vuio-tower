@@ -1,9 +1,34 @@
 const { invoke } = window.__TAURI__.core;
+const { getCurrentWindow } = window.__TAURI__.window;
 
 let serverNameEl;
 let serverPortEl;
 let foldersListEl;
+let settingsFormEl;
+let saveButtonEl;
+let cancelButtonEl;
+let settingsErrorEl;
 let folders = [];
+let isApplying = false;
+
+const settingsWindow = getCurrentWindow();
+
+function showError(message) {
+  settingsErrorEl.textContent = message;
+  settingsErrorEl.hidden = false;
+}
+
+function clearError() {
+  settingsErrorEl.textContent = "";
+  settingsErrorEl.hidden = true;
+}
+
+function setApplying(applying) {
+  isApplying = applying;
+  saveButtonEl.disabled = applying;
+  cancelButtonEl.disabled = applying;
+  saveButtonEl.textContent = applying ? "Applying…" : "Apply";
+}
 
 async function loadSettings() {
   try {
@@ -12,8 +37,10 @@ async function loadSettings() {
     serverPortEl.value = settings.port;
     folders = settings.directories || [];
     renderFolders();
+    clearError();
   } catch (err) {
     console.error("Failed to load settings:", err);
+    showError("Failed to load settings: " + err);
   }
 }
 
@@ -62,40 +89,60 @@ async function addFolder() {
 
 async function saveSettings(e) {
   e.preventDefault();
+  if (isApplying) return;
+
   const name = serverNameEl.value.trim();
   const port = parseInt(serverPortEl.value, 10);
 
-  if (!name || isNaN(port)) return;
+  if (!name || !Number.isInteger(port) || port < 1024 || port > 65535) {
+    showError("Enter a server name and a port between 1024 and 65535.");
+    settingsFormEl.reportValidity();
+    return;
+  }
 
+  clearError();
+  setApplying(true);
   try {
     await invoke("save_settings", {
       port,
       name,
       directories: folders
     });
-    
-    // Close the settings window upon success
-    const { getCurrentWindow } = window.__TAURI__.window;
-    getCurrentWindow().close();
+
+    await settingsWindow.hide();
   } catch (err) {
     console.error("Failed to save settings:", err);
-    alert("Error saving settings: " + err);
+    showError("Error saving settings: " + err);
+  } finally {
+    setApplying(false);
   }
 }
 
-function cancelSettings() {
-  const { getCurrentWindow } = window.__TAURI__.window;
-  getCurrentWindow().close();
+async function cancelSettings() {
+  if (isApplying) return;
+
+  await settingsWindow.hide();
+  await loadSettings();
 }
 
 window.addEventListener("DOMContentLoaded", () => {
   serverNameEl = document.querySelector("#server-name");
   serverPortEl = document.querySelector("#server-port");
   foldersListEl = document.querySelector("#folders-list");
+  settingsFormEl = document.querySelector("#settings-form");
+  saveButtonEl = document.querySelector("#btn-save");
+  cancelButtonEl = document.querySelector("#btn-cancel");
+  settingsErrorEl = document.querySelector("#settings-error");
 
   document.querySelector("#btn-add-folder").addEventListener("click", addFolder);
-  document.querySelector("#btn-cancel").addEventListener("click", cancelSettings);
-  document.querySelector("#settings-form").addEventListener("submit", saveSettings);
+  cancelButtonEl.addEventListener("click", cancelSettings);
+  settingsFormEl.addEventListener("submit", saveSettings);
+
+  settingsWindow
+    .listen("settings-opened", () => {
+      if (!isApplying) loadSettings();
+    })
+    .catch((err) => console.error("Failed to listen for settings window events:", err));
 
   loadSettings();
 });
