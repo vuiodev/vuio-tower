@@ -1,61 +1,34 @@
 # VuIO Tower
 
-This is the Tauri-based desktop GUI for VuIO. It embeds the Rust backend as a sidecar process.
+VuIO Tower is the Tauri desktop host for `vuio-core`. The complete VuIO server runs inside the desktop process; there is no copied executable or sidecar process.
 
 ## Prerequisites
 
-Ensure you have the following installed on your system:
-- **Rust / Cargo** (via [rustup](https://rustup.rs/))
-- **Node.js** (for web frontend development/Tauri CLI tools)
+- Rust and Cargo
+- Node.js for the Tauri CLI
+- A sibling checkout of the VuIO repository while developing locally
 
-## How to Run Locally
+The local dependency is resolved from `../vuio/crates/vuio-core`. Release branches replace that development path with a pinned VuIO Git tag.
 
-### 1. Build the Backend Sidecar
+## Run locally
 
-The desktop app expects the backend `vuio` server binary to be placed in `src-tauri/binaries` with the system's target triple suffix.
-
-From the backend repository root (where the backend is located), build the backend and copy it into the VuIO Tower sidecars directory (which is in the sibling `vuio-tower` directory):
-
-```bash
-# 1. Build the backend
-cargo build --bin vuio
-
-# 2. Copy the binary to the Tauri sidecar folder with the correct host target triple
-cp target/debug/vuio ../vuio-tower/src-tauri/binaries/vuio-$(rustc -Vv | grep host | cut -d' ' -f2)
-```
-
-### 2. Run the Desktop App
-
-You can run the Tauri application either using Cargo directly or through the Tauri CLI.
-
-#### Option A: Run using Cargo (Directly)
-From the `src-tauri` directory:
-```bash
-cargo run
-```
-
-#### Option B: Run using Tauri CLI (Recommended for development)
-First, ensure frontend dependencies are installed. From the root directory:
 ```bash
 npm install
 npm run tauri dev
 ```
 
----
+To run the Rust host directly:
 
-## Capabilities & Configuration
+```bash
+cargo run --manifest-path src-tauri/Cargo.toml
+```
 
-- **Config Location**: On startup, the sidecar creates/uses a default configuration file at `~/Library/Application Support/vuio/config.toml` (macOS) or the standard Linux config path.
-- **Port**: The default UI port is `8080`.
-- **Sidecar Permissions**: Sidecar execution permissions are configured in `src-tauri/capabilities/default.json`.
+## Configuration
 
-## Contributing
+Tower uses the standard VuIO configuration directory and starts the embedded runtime automatically. The settings form patches the existing TOML document instead of regenerating it, preserving comments, unknown fields, and advanced directory options.
 
-Contributions welcome! Please ensure cross-platform compatibility is maintained.
-Input license = output license
+The default HTTP dashboard is available on port `8080`. Server lifecycle operations are performed through `vuio-core`; no Tauri shell execution permission is required.
 
 ## License
 
-- [MIT License](LICENSE-MIT)
-or
-- [Apache License 2.0](LICENSE-APACHE)
+MIT or Apache-2.0.
