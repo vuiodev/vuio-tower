@@ -25,7 +25,7 @@ fn get_settings() -> Result<serde_json::Value, String> {
         .get("server")
         .and_then(|s| s.get("name"))
         .and_then(|n| n.as_str())
-        .unwrap_or("Vuio")
+        .unwrap_or(service::DEFAULT_SERVER_NAME)
         .to_string();
 
     let mut directories = Vec::new();
