@@ -29,7 +29,7 @@ pub struct AppState {
 pub fn get_configured_port() -> u16 {
     let (config_path, _, _) = crate::service::get_vuio_paths();
     if let Ok(content) = std::fs::read_to_string(config_path) {
-        if let Ok(value) = content.parse::<toml::Value>() {
+        if let Ok(value) = crate::parse_settings_document(&content) {
             if let Some(server) = value.get("server") {
                 if let Some(port) = server.get("port") {
                     if let Some(p) = port.as_integer() {
