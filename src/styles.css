@@ -24,16 +24,21 @@ body {
   background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.15), transparent 60%),
               radial-gradient(circle at bottom left, rgba(79, 70, 229, 0.08), transparent 50%),
               var(--bg-color);
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  margin: 0;
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: stretch;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .settings-container {
   width: 100%;
   max-width: 480px;
+  height: 100vh;
+  min-height: 0;
   padding: 24px;
   box-sizing: border-box;
   display: flex;
@@ -64,7 +69,28 @@ body {
 #settings-form {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.form-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.form-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.form-content::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
 }
 
 .form-group {
@@ -191,11 +217,28 @@ input[type="number"]:focus {
   color: var(--danger-color);
 }
 
+.action-footer {
+  flex-shrink: 0;
+  padding-top: 16px;
+}
+
+.settings-error {
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0 0 10px;
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 12px;
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+  transform: none;
 }
 
 .btn-primary {

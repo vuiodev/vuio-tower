@@ -4,12 +4,16 @@ mod tray;
 use tauri::Manager;
 use tray::AppState;
 
+fn parse_settings_document(content: &str) -> Result<toml::Value, String> {
+    toml::from_str(content).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn get_settings() -> Result<serde_json::Value, String> {
     service::ensure_config_exists()?;
     let (config_path, _, _) = service::get_vuio_paths();
     let content = std::fs::read_to_string(config_path).map_err(|e| e.to_string())?;
-    let value = content.parse::<toml::Value>().map_err(|e| e.to_string())?;
+    let value = parse_settings_document(&content)?;
 
     let port = value
         .get("server")
@@ -21,7 +25,7 @@ fn get_settings() -> Result<serde_json::Value, String> {
         .get("server")
         .and_then(|s| s.get("name"))
         .and_then(|n| n.as_str())
-        .unwrap_or("Vuio")
+        .unwrap_or(service::DEFAULT_SERVER_NAME)
         .to_string();
 
     let mut directories = Vec::new();
@@ -123,7 +127,7 @@ async fn save_settings(
 
 #[cfg(test)]
 mod tests {
-    use super::patch_settings_document;
+    use super::{parse_settings_document, patch_settings_document};
     use vuio_core::config::ConfigChangeImpact;
 
     const CONFIG: &str = r#"# keep this comment
@@ -178,6 +182,13 @@ unknown = true
         let (_, impact) = patch_settings_document(CONFIG, 9090, "VuIO", &directories).unwrap();
         assert_eq!(impact, ConfigChangeImpact::RestartRequired);
     }
+
+    #[test]
+    fn parses_complete_settings_document() {
+        let value = parse_settings_document(CONFIG).unwrap();
+        assert_eq!(value["server"]["port"].as_integer(), Some(8080));
+        assert_eq!(value["server"]["name"].as_str(), Some("VuIO"));
+    }
 }
 
 #[tauri::command]
@@ -213,6 +224,7 @@ pub fn run() {
                 total_files: 0,
                 total_size_bytes: 0,
             }),
+            tray_menu: std::sync::RwLock::new(None),
         })
         .setup(|app| {
             let handle = app.handle().clone();
