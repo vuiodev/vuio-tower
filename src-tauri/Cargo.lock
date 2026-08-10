@@ -5128,7 +5128,7 @@ dependencies = [
 
 [[package]]
 name = "vuio-core"
-version = "0.0.40"
+version = "0.0.41"
 source = "git+https://github.com/vuiodev/vuio.git?branch=main#d07180cc44a8bfdeaf2ee8880e296733128f61ba"
 dependencies = [
  "anyhow",
