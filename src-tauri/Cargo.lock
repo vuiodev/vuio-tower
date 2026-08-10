@@ -2854,6 +2854,7 @@ dependencies = [
 [[package]]
 name = "oxicast"
 version = "0.0.3"
+source = "git+https://github.com/vuiodev/vuio.git?branch=main#d07180cc44a8bfdeaf2ee8880e296733128f61ba"
 dependencies = [
  "bytes",
  "prost",
@@ -5128,6 +5129,7 @@ dependencies = [
 [[package]]
 name = "vuio-core"
 version = "0.0.40"
+source = "git+https://github.com/vuiodev/vuio.git?branch=main#d07180cc44a8bfdeaf2ee8880e296733128f61ba"
 dependencies = [
  "anyhow",
  "async-stream",
