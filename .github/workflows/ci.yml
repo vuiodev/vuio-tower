@@ -88,12 +88,22 @@ jobs:
       - name: Patch vuio-core dependency
         shell: bash
         run: |
-          LATEST_TAG=$(curl -s https://api.github.com/repos/vuiodev/vuio/releases/latest | jq -r .tag_name // empty)
-          export LATEST_TAG
           python3 -c "
-          import os, re
-          tag = os.environ.get('LATEST_TAG', '').strip()
+          import os, re, json, urllib.request
+
           file_path = 'src-tauri/Cargo.toml'
+          tag = ''
+          try:
+              req = urllib.request.Request(
+                  'https://api.github.com/repos/vuiodev/vuio/releases/latest',
+                  headers={'User-Agent': 'GitHub-Action'}
+              )
+              with urllib.request.urlopen(req) as resp:
+                  data = json.loads(resp.read().decode())
+                  tag = data.get('tag_name', '').strip()
+          except Exception as e:
+              print(f'Warning: Could not fetch latest release tag: {e}')
+
           with open(file_path, 'r') as f:
               content = f.read()
 
@@ -136,12 +146,22 @@ jobs:
       - name: Patch vuio-core dependency
         shell: bash
         run: |
-          LATEST_TAG=$(curl -s https://api.github.com/repos/vuiodev/vuio/releases/latest | jq -r .tag_name // empty)
-          export LATEST_TAG
           python3 -c "
-          import os, re
-          tag = os.environ.get('LATEST_TAG', '').strip()
+          import os, re, json, urllib.request
+
           file_path = 'src-tauri/Cargo.toml'
+          tag = ''
+          try:
+              req = urllib.request.Request(
+                  'https://api.github.com/repos/vuiodev/vuio/releases/latest',
+                  headers={'User-Agent': 'GitHub-Action'}
+              )
+              with urllib.request.urlopen(req) as resp:
+                  data = json.loads(resp.read().decode())
+                  tag = data.get('tag_name', '').strip()
+          except Exception as e:
+              print(f'Warning: Could not fetch latest release tag: {e}')
+
           with open(file_path, 'r') as f:
               content = f.read()
 
@@ -211,12 +231,22 @@ jobs:
       - name: Patch vuio-core dependency
         shell: bash
         run: |
-          LATEST_TAG=$(curl -s https://api.github.com/repos/vuiodev/vuio/releases/latest | jq -r .tag_name // empty)
-          export LATEST_TAG
           python3 -c "
-          import os, re
-          tag = os.environ.get('LATEST_TAG', '').strip()
+          import os, re, json, urllib.request
+
           file_path = 'src-tauri/Cargo.toml'
+          tag = ''
+          try:
+              req = urllib.request.Request(
+                  'https://api.github.com/repos/vuiodev/vuio/releases/latest',
+                  headers={'User-Agent': 'GitHub-Action'}
+              )
+              with urllib.request.urlopen(req) as resp:
+                  data = json.loads(resp.read().decode())
+                  tag = data.get('tag_name', '').strip()
+          except Exception as e:
+              print(f'Warning: Could not fetch latest release tag: {e}')
+
           with open(file_path, 'r') as f:
               content = f.read()
 
@@ -299,12 +329,22 @@ jobs:
       - name: Patch vuio-core dependency
         shell: bash
         run: |
-          LATEST_TAG=$(curl -s https://api.github.com/repos/vuiodev/vuio/releases/latest | jq -r .tag_name // empty)
-          export LATEST_TAG
           python3 -c "
-          import os, re
-          tag = os.environ.get('LATEST_TAG', '').strip()
+          import os, re, json, urllib.request
+
           file_path = 'src-tauri/Cargo.toml'
+          tag = ''
+          try:
+              req = urllib.request.Request(
+                  'https://api.github.com/repos/vuiodev/vuio/releases/latest',
+                  headers={'User-Agent': 'GitHub-Action'}
+              )
+              with urllib.request.urlopen(req) as resp:
+                  data = json.loads(resp.read().decode())
+                  tag = data.get('tag_name', '').strip()
+          except Exception as e:
+              print(f'Warning: Could not fetch latest release tag: {e}')
+
           with open(file_path, 'r') as f:
               content = f.read()
 
