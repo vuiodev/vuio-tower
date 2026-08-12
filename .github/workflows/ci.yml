@@ -28,10 +28,6 @@ env:
 jobs:
   format:
     name: Rustfmt
-    if: |
-      github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') ||
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'test')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -45,22 +41,10 @@ jobs:
 
   clippy:
     name: Clippy
-    if: |
-      github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') ||
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'test')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout vuio-tower
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          path: vuio-tower
-
-      - name: Checkout sibling vuio for local dev path resolution during linting
-        uses: actions/checkout@v4
-        with:
-          repository: vuiodev/vuio
-          path: vuio
 
       - name: Install System Dependencies
         run: |
@@ -73,52 +57,19 @@ jobs:
           components: clippy
 
       - name: Run Clippy
-        working-directory: vuio-tower
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
-  test:
-    name: Test
-    if: |
-      github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') ||
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'test')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout vuio-tower
-        uses: actions/checkout@v4
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Patch vuio-core dependency
-        shell: bash
-        run: |
-          python3 -c "
-          import re
-          file_path = 'src-tauri/Cargo.toml'
-          with open(file_path, 'r') as f:
-              content = f.read()
-          replacement = 'git = \"https://github.com/vuiodev/vuio.git\", branch = \"main\"'
-          content = re.sub(r'path\s*=\s*\"\.\./\.\./vuio/crates/vuio-core\"', replacement, content)
-          with open(file_path, 'w') as f:
-              f.write(content)
-          "
-          cat src-tauri/Cargo.toml
-
-      - name: Run unit tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-
-  build-macos:
-    name: Build macOS Universal App & DMG
-    if: |
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
+  test-macos:
+    name: Test & Build macOS (${{ matrix.arch }})
     runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            arch: x86_64
+          - target: aarch64-apple-darwin
+            arch: arm64
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -131,50 +82,34 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-apple-darwin,aarch64-apple-darwin
-
-      - name: Patch vuio-core dependency
-        shell: bash
-        run: |
-          python3 -c "
-          import re
-          file_path = 'src-tauri/Cargo.toml'
-          with open(file_path, 'r') as f:
-              content = f.read()
-          replacement = 'git = \"https://github.com/vuiodev/vuio.git\", branch = \"main\"'
-          content = re.sub(r'path\s*=\s*\"\.\./\.\./vuio/crates/vuio-core\"', replacement, content)
-          with open(file_path, 'w') as f:
-              f.write(content)
-          "
-          cat src-tauri/Cargo.toml
+          targets: ${{ matrix.target }}
 
       - name: Install npm dependencies
         run: npm ci || npm install
 
-      - name: Build Universal macOS App & DMG
-        run: npx tauri build --target universal-apple-darwin
+      - name: Run Unit Tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
 
-      - name: Package macOS artifacts
+      - name: Build App Binary
+        run: npx tauri build --target ${{ matrix.target }} --no-bundle
+
+      - name: Package macOS binary
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
         shell: bash
         run: |
           mkdir -p release-out
-          find src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" -exec cp {} release-out/vuio-tower-macos-universal.dmg \;
-          if [ -d "src-tauri/target/universal-apple-darwin/release/bundle/macos/VuIO Tower.app" ]; then
-            tar -czf release-out/vuio-tower-macos-universal.tar.gz -C "src-tauri/target/universal-apple-darwin/release/bundle/macos" "VuIO Tower.app"
-          fi
-          ls -la release-out/
+          ASSET_NAME="vuio-tower-macos-${{ matrix.arch }}.tar.gz"
+          tar -czf "release-out/$ASSET_NAME" -C "src-tauri/target/${{ matrix.target }}/release" "vuio-tower"
 
       - name: Upload macOS artifact
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
         uses: actions/upload-artifact@v4
         with:
-          name: release-artifact-macos-universal
+          name: release-artifact-macos-${{ matrix.arch }}
           path: release-out/*
 
-  build-windows:
-    name: Build Windows Standalone Executable (${{ matrix.arch }})
-    if: |
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
+  test-windows:
+    name: Test & Build Windows (${{ matrix.arch }})
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -198,46 +133,37 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Patch vuio-core dependency
-        shell: bash
-        run: |
-          python3 -c "
-          import re
-          file_path = 'src-tauri/Cargo.toml'
-          with open(file_path, 'r') as f:
-              content = f.read()
-          replacement = 'git = \"https://github.com/vuiodev/vuio.git\", branch = \"main\"'
-          content = re.sub(r'path\s*=\s*\"\.\./\.\./vuio/crates/vuio-core\"', replacement, content)
-          with open(file_path, 'w') as f:
-              f.write(content)
-          "
-          cat src-tauri/Cargo.toml
-
       - name: Install npm dependencies
         run: npm ci || npm install
 
-      - name: Build Windows binary
+      - name: Run Unit Tests (x86_64)
+        if: matrix.arch == 'x86_64'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Check Compilation (ARM64)
+        if: matrix.arch == 'arm64'
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Build App Binary
         run: npx tauri build --target ${{ matrix.target }} --no-bundle
 
       - name: Package Windows executable
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
         shell: bash
         run: |
           mkdir -p release-out
           ASSET_NAME="vuio-tower-windows-${{ matrix.arch }}.zip"
           powershell Compress-Archive -Path "src-tauri/target/${{ matrix.target }}/release/vuio-tower.exe" -DestinationPath "release-out/$ASSET_NAME"
-          ls -la release-out/
 
       - name: Upload Windows artifact
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
         uses: actions/upload-artifact@v4
         with:
           name: release-artifact-windows-${{ matrix.arch }}
           path: release-out/*
 
-  build-linux:
-    name: Build Linux Binary (${{ matrix.arch }})
-    if: |
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
+  test-linux:
+    name: Test & Build Linux (${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -256,56 +182,56 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install System Dependencies
+      - name: Install System Dependencies (Linux x86_64)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-          if [ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-          fi
+
+      - name: Install System Dependencies (Linux ARM64 multiarch)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross \
+            libgtk-3-dev:arm64 libwebkit2gtk-4.1-dev:arm64 libappindicator3-dev:arm64 librsvg2-dev:arm64 patchelf
+          mkdir -p ~/.cargo
+          cat << 'EOF' >> ~/.cargo/config.toml
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+          echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Configure cross-linker (Linux ARM64)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          mkdir -p ~/.cargo
-          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
-          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
-
-      - name: Patch vuio-core dependency
-        shell: bash
-        run: |
-          python3 -c "
-          import re
-          file_path = 'src-tauri/Cargo.toml'
-          with open(file_path, 'r') as f:
-              content = f.read()
-          replacement = 'git = \"https://github.com/vuiodev/vuio.git\", branch = \"main\"'
-          content = re.sub(r'path\s*=\s*\"\.\./\.\./vuio/crates/vuio-core\"', replacement, content)
-          with open(file_path, 'w') as f:
-              f.write(content)
-          "
-          cat src-tauri/Cargo.toml
-
       - name: Install npm dependencies
         run: npm ci || npm install
 
-      - name: Build Linux binary
+      - name: Run Unit Tests (x86_64)
+        if: matrix.arch == 'x86_64'
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Check Compilation (ARM64)
+        if: matrix.arch == 'arm64'
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Build App Binary
         run: npx tauri build --target ${{ matrix.target }} --no-bundle
 
       - name: Package Linux artifact
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
         shell: bash
         run: |
           mkdir -p release-out
           ASSET_NAME="vuio-tower-linux-${{ matrix.arch }}.tar.gz"
           tar -czf "release-out/$ASSET_NAME" -C "src-tauri/target/${{ matrix.target }}/release" "vuio-tower"
-          ls -la release-out/
 
       - name: Upload Linux artifact
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
         uses: actions/upload-artifact@v4
         with:
           name: release-artifact-linux-${{ matrix.arch }}
@@ -317,7 +243,7 @@ jobs:
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
     runs-on: ubuntu-latest
-    needs: [build-macos, build-windows, build-linux]
+    needs: [test-macos, test-windows, test-linux]
     permissions:
       contents: write
 
