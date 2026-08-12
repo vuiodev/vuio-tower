@@ -130,8 +130,9 @@ jobs:
           sudo dpkg --add-architecture arm64
 
           # GitHub runners use Azure mirrors (amd64 only).
-          # Pin existing sources to amd64 and add ports.ubuntu.com for arm64.
-          sudo sed -i 's/^Architectures:.*/Architectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
+          # Pin ALL existing source entries to amd64 and add ports.ubuntu.com for arm64.
+          sudo sed -i '/^Architectures:/d' /etc/apt/sources.list.d/ubuntu.sources
+          sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
 
           cat <<'EOF' | sudo tee /etc/apt/sources.list.d/arm64-ports.list
           deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
@@ -236,7 +237,8 @@ jobs:
         run: |
           sudo dpkg --add-architecture arm64
 
-          sudo sed -i 's/^Architectures:.*/Architectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo sed -i '/^Architectures:/d' /etc/apt/sources.list.d/ubuntu.sources
+          sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
 
           cat <<'EOF' | sudo tee /etc/apt/sources.list.d/arm64-ports.list
           deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
