@@ -278,6 +278,12 @@ pub fn create_tray(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
             "trigger_scan" => {
                 let port = get_configured_port();
                 tauri::async_runtime::spawn(async move {
+                    let (config_path, _, _) = crate::service::get_vuio_paths();
+                    if config_path.exists() {
+                        if let Ok(content) = std::fs::read_to_string(&config_path) {
+                            let _ = std::fs::write(&config_path, content);
+                        }
+                    }
                     let client = reqwest::Client::new();
                     let _ = client.post(format!("http://127.0.0.1:{}/api/scan", port)).send().await;
                 });

@@ -48,15 +48,26 @@ fn get_settings() -> Result<serde_json::Value, String> {
     }))
 }
 
+use vuio_core::config::{AppConfig, ConfigChangeImpact};
+
+fn classify_change(old: &AppConfig, new: &AppConfig) -> ConfigChangeImpact {
+    if old == new {
+        ConfigChangeImpact::NoChange
+    } else if old.server.port != new.server.port {
+        ConfigChangeImpact::RestartRequired
+    } else {
+        ConfigChangeImpact::LiveReload
+    }
+}
+
 fn patch_settings_document(
     original: &str,
     port: u16,
     name: &str,
     directories: &[String],
-) -> Result<(String, vuio_core::config::ConfigChangeImpact), String> {
+) -> Result<(String, ConfigChangeImpact), String> {
     use std::str::FromStr;
     use toml_edit::{value, ArrayOfTables, DocumentMut, Item, Table};
-    use vuio_core::config::{classify_change, AppConfig};
 
     let old_config = AppConfig::from_toml_str(original).map_err(|error| error.to_string())?;
     let mut document = DocumentMut::from_str(original).map_err(|error| error.to_string())?;
