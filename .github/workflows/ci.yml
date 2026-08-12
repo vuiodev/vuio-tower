@@ -87,27 +87,27 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             arch: x86_64
-            use_cross: false
+            cross: false
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             arch: x86_64
-            use_cross: false
+            cross: false
           - runner: macos-14
             target: x86_64-apple-darwin
             arch: x86_64
-            use_cross: false
+            cross: false
           - runner: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             arch: arm64
-            use_cross: true
+            cross: true
           - runner: windows-latest
             target: aarch64-pc-windows-msvc
             arch: arm64
-            use_cross: false
+            cross: true
           - runner: macos-14
             target: aarch64-apple-darwin
             arch: arm64
-            use_cross: false
+            cross: false
 
     steps:
       - name: Checkout code
@@ -124,34 +124,54 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
+      - name: Setup ARM64 multiarch (Linux)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo dpkg --add-architecture arm64
+
+          # GitHub runners use Azure mirrors (amd64 only).
+          # Pin existing sources to amd64 and add ports.ubuntu.com for arm64.
+          sudo sed -i 's/^Architectures:.*/Architectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
+
+          cat <<'EOF' | sudo tee /etc/apt/sources.list.d/arm64-ports.list
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse
+          EOF
+
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross \
+            libgtk-3-dev:arm64 libwebkit2gtk-4.1-dev:arm64 \
+            libappindicator3-dev:arm64 librsvg2-dev:arm64 patchelf
+
+          mkdir -p ~/.cargo
+          cat <<'EOF' >> ~/.cargo/config.toml
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+          echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross
-        if: matrix.use_cross
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cross
-
       - name: Install npm dependencies
         run: npm ci || npm install
 
       - name: Run Unit Tests (Native targets)
-        if: "!matrix.use_cross && matrix.target != 'aarch64-pc-windows-msvc'"
+        if: "!matrix.cross"
         run: cargo test --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
 
-      - name: Check Compilation (Windows ARM64)
-        if: matrix.target == 'aarch64-pc-windows-msvc'
+      - name: Check Compilation (Cross targets)
+        if: matrix.cross
         run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
 
-      - name: Check Compilation (cross)
-        if: matrix.use_cross
-        run: cross check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
-
       - name: Build Binary (Native targets)
-        if: "!matrix.use_cross && matrix.target != 'aarch64-pc-windows-msvc'"
+        if: "!matrix.cross"
         run: npx tauri build --target ${{ matrix.target }} --no-bundle
 
   build_release_artifacts:
@@ -169,32 +189,32 @@ jobs:
             target: x86_64-unknown-linux-gnu
             os-arch: linux-x86_64
             asset_ext: .tar.gz
-            use_cross: false
+            cross: false
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             os-arch: windows-x86_64
             asset_ext: .zip
-            use_cross: false
+            cross: false
           - runner: macos-14
             target: x86_64-apple-darwin
             os-arch: macos-x86_64
             asset_ext: .tar.gz
-            use_cross: false
+            cross: false
           - runner: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             os-arch: linux-arm64
             asset_ext: .tar.gz
-            use_cross: true
+            cross: true
           - runner: windows-latest
             target: aarch64-pc-windows-msvc
             os-arch: windows-arm64
             asset_ext: .zip
-            use_cross: false
+            cross: true
           - runner: macos-14
             target: aarch64-apple-darwin
             os-arch: macos-arm64
             asset_ext: .tar.gz
-            use_cross: false
+            cross: false
 
     steps:
       - name: Checkout code
@@ -211,27 +231,49 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
+      - name: Setup ARM64 multiarch (Linux)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo dpkg --add-architecture arm64
+
+          sudo sed -i 's/^Architectures:.*/Architectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
+
+          cat <<'EOF' | sudo tee /etc/apt/sources.list.d/arm64-ports.list
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse
+          EOF
+
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross \
+            libgtk-3-dev:arm64 libwebkit2gtk-4.1-dev:arm64 \
+            libappindicator3-dev:arm64 librsvg2-dev:arm64 patchelf
+
+          mkdir -p ~/.cargo
+          cat <<'EOF' >> ~/.cargo/config.toml
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+          echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross
-        if: matrix.use_cross
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cross
-
       - name: Install npm dependencies
         run: npm ci || npm install
 
       - name: Build App Binary (Native)
-        if: "!matrix.use_cross"
+        if: "!matrix.cross"
         run: npx tauri build --target ${{ matrix.target }} --no-bundle
 
-      - name: Build Binary (cross)
-        if: matrix.use_cross
-        run: cross build --manifest-path src-tauri/Cargo.toml --release --target ${{ matrix.target }}
+      - name: Build Binary (Cross)
+        if: matrix.cross
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release --target ${{ matrix.target }}
 
       - name: Package artifacts
         shell: bash
