@@ -96,10 +96,10 @@ jobs:
             target: x86_64-apple-darwin
             arch: x86_64
             cross: false
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             arch: arm64
-            cross: true
+            cross: false
           - runner: windows-latest
             target: aarch64-pc-windows-msvc
             arch: arm64
@@ -118,42 +118,13 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install System Dependencies (Linux x86_64)
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
+      - name: Install System Dependencies (Linux)
+        # aarch64-unknown-linux-gnu builds run natively on ubuntu-24.04-arm,
+        # so no multiarch/cross apt setup is needed for either Linux target.
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Setup ARM64 multiarch (Linux)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo dpkg --add-architecture arm64
-
-          # Point ALL apt sources (amd64 + arm64) at ports.ubuntu.com, which
-          # serves both architectures from the same mirror. Keeping a single
-          # mirror keeps the arches' package versions in lockstep and avoids
-          # unmet exact-version cross-arch depends (e.g. libglib2.0-dev-bin-linux).
-          sudo rm -f /etc/apt/sources.list.d/ubuntu.sources
-          cat <<'EOF' | sudo tee /etc/apt/sources.list.d/ports.list
-          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
-          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse
-          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse
-          EOF
-
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross \
-            libgtk-3-dev:arm64 libwebkit2gtk-4.1-dev:arm64 \
-            libappindicator3-dev:arm64 librsvg2-dev:arm64 patchelf
-
-          mkdir -p ~/.cargo
-          cat <<'EOF' >> ~/.cargo/config.toml
-          [target.aarch64-unknown-linux-gnu]
-          linker = "aarch64-linux-gnu-gcc"
-          EOF
-
-          echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -163,6 +134,14 @@ jobs:
       - name: Install Rosetta 2 (x86_64 tests on Apple Silicon)
         if: matrix.target == 'x86_64-apple-darwin' && runner.arch == 'ARM64'
         run: softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Set CMake object arch (x86_64 macOS cross build)
+        # CMake-based sys crates (e.g. vuio-xaac-sys) emit host-arch (arm64)
+        # objects when cross-building x86_64 on Apple Silicon runners, which
+        # makes the final app link fail with "found architecture 'arm64'".
+        # CMake initializes CMAKE_OSX_ARCHITECTURES from this env var.
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: echo "CMAKE_OSX_ARCHITECTURES=x86_64" >> $GITHUB_ENV
 
       - name: Install npm dependencies
         run: npm ci || npm install
@@ -205,11 +184,11 @@ jobs:
             os-arch: macos-x86_64
             asset_ext: .tar.gz
             cross: false
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             os-arch: linux-arm64
             asset_ext: .tar.gz
-            cross: true
+            cross: false
           - runner: windows-latest
             target: aarch64-pc-windows-msvc
             os-arch: windows-arm64
@@ -230,42 +209,13 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install System Dependencies (Linux x86_64)
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
+      - name: Install System Dependencies (Linux)
+        # aarch64-unknown-linux-gnu builds run natively on ubuntu-24.04-arm,
+        # so no multiarch/cross apt setup is needed for either Linux target.
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Setup ARM64 multiarch (Linux)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo dpkg --add-architecture arm64
-
-          # Point ALL apt sources (amd64 + arm64) at ports.ubuntu.com, which
-          # serves both architectures from the same mirror. Keeping a single
-          # mirror keeps the arches' package versions in lockstep and avoids
-          # unmet exact-version cross-arch depends (e.g. libglib2.0-dev-bin-linux).
-          sudo rm -f /etc/apt/sources.list.d/ubuntu.sources
-          cat <<'EOF' | sudo tee /etc/apt/sources.list.d/ports.list
-          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
-          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse
-          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse
-          EOF
-
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross \
-            libgtk-3-dev:arm64 libwebkit2gtk-4.1-dev:arm64 \
-            libappindicator3-dev:arm64 librsvg2-dev:arm64 patchelf
-
-          mkdir -p ~/.cargo
-          cat <<'EOF' >> ~/.cargo/config.toml
-          [target.aarch64-unknown-linux-gnu]
-          linker = "aarch64-linux-gnu-gcc"
-          EOF
-
-          echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -274,6 +224,14 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci || npm install
+
+      - name: Set CMake object arch (x86_64 macOS cross build)
+        # CMake-based sys crates (e.g. vuio-xaac-sys) emit host-arch (arm64)
+        # objects when cross-building x86_64 on Apple Silicon runners, which
+        # makes the final app link fail with "found architecture 'arm64'".
+        # CMake initializes CMAKE_OSX_ARCHITECTURES from this env var.
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: echo "CMAKE_OSX_ARCHITECTURES=x86_64" >> $GITHUB_ENV
 
       - name: Build App Binary (Native)
         if: "!matrix.cross"
