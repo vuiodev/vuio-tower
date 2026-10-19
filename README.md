@@ -6,9 +6,8 @@ VuIO Tower is the Tauri desktop host for `vuio-core`. The complete VuIO server r
 
 - Rust and Cargo
 - Node.js for the Tauri CLI
-- A sibling checkout of the VuIO repository while developing locally
 
-The local dependency is resolved from `../vuio/crates/vuio-core`. Release branches replace that development path with a pinned VuIO Git tag.
+The `vuio-core` dependency is resolved directly from the upstream `vuiodev/vuio` Git repository.
 
 ## Run locally
 

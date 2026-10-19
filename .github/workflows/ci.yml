@@ -1,0 +1,282 @@
+name: CI & Release
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      task_to_run:
+        description: 'Which part of the workflow to run'
+        type: choice
+        options:
+          - test
+          - release
+        required: true
+        default: 'test'
+      tag_name:
+        description: 'Tag for manual release (e.g. v0.1.0)'
+        required: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  format:
+    name: Rustfmt
+    if: |
+      github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'test')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+  clippy:
+    name: Clippy on ${{ matrix.os }}
+    if: |
+      github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'test')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Run Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+
+  test_and_check:
+    name: Test & Check on ${{ matrix.target }}
+    if: |
+      github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'test')
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            cross: false
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x86_64
+            cross: false
+          - runner: macos-14
+            target: x86_64-apple-darwin
+            arch: x86_64
+            cross: false
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            cross: false
+          - runner: windows-latest
+            target: aarch64-pc-windows-msvc
+            arch: arm64
+            cross: true
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            arch: arm64
+            cross: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install System Dependencies (Linux)
+        # aarch64-unknown-linux-gnu builds run natively on ubuntu-24.04-arm,
+        # so no multiarch/cross apt setup is needed for either Linux target.
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Rosetta 2 (x86_64 tests on Apple Silicon)
+        if: matrix.target == 'x86_64-apple-darwin' && runner.arch == 'ARM64'
+        run: softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Set CMake object arch (x86_64 macOS cross build)
+        # CMake-based sys crates (e.g. vuio-xaac-sys) emit host-arch (arm64)
+        # objects when cross-building x86_64 on Apple Silicon runners, which
+        # makes the final app link fail with "found architecture 'arm64'".
+        # CMake initializes CMAKE_OSX_ARCHITECTURES from this env var.
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: echo "CMAKE_OSX_ARCHITECTURES=x86_64" >> $GITHUB_ENV
+
+      - name: Install npm dependencies
+        run: npm ci || npm install
+
+      - name: Run Unit Tests (Native targets)
+        if: "!matrix.cross"
+        run: cargo test --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Check Compilation (Cross targets)
+        if: matrix.cross
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Build Binary (Native targets)
+        if: "!matrix.cross"
+        run: npx tauri build --target ${{ matrix.target }} --no-bundle
+
+  build_release_artifacts:
+    name: Build release for ${{ matrix.target }}
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            os-arch: linux-x86_64
+            asset_ext: .tar.gz
+            cross: false
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            os-arch: windows-x86_64
+            asset_ext: .zip
+            cross: false
+          - runner: macos-14
+            target: x86_64-apple-darwin
+            os-arch: macos-x86_64
+            asset_ext: .tar.gz
+            cross: false
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            os-arch: linux-arm64
+            asset_ext: .tar.gz
+            cross: false
+          - runner: windows-latest
+            target: aarch64-pc-windows-msvc
+            os-arch: windows-arm64
+            asset_ext: .zip
+            cross: true
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            os-arch: macos-arm64
+            asset_ext: .tar.gz
+            cross: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install System Dependencies (Linux)
+        # aarch64-unknown-linux-gnu builds run natively on ubuntu-24.04-arm,
+        # so no multiarch/cross apt setup is needed for either Linux target.
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install npm dependencies
+        run: npm ci || npm install
+
+      - name: Set CMake object arch (x86_64 macOS cross build)
+        # CMake-based sys crates (e.g. vuio-xaac-sys) emit host-arch (arm64)
+        # objects when cross-building x86_64 on Apple Silicon runners, which
+        # makes the final app link fail with "found architecture 'arm64'".
+        # CMake initializes CMAKE_OSX_ARCHITECTURES from this env var.
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: echo "CMAKE_OSX_ARCHITECTURES=x86_64" >> $GITHUB_ENV
+
+      - name: Build App Binary (Native)
+        if: "!matrix.cross"
+        run: npx tauri build --target ${{ matrix.target }} --no-bundle
+
+      - name: Build Binary (Cross)
+        if: matrix.cross
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release --target ${{ matrix.target }}
+
+      - name: Package artifacts
+        shell: bash
+        run: |
+          mkdir -p release-out
+          ASSET_NAME="vuio-tower-${{ matrix.os-arch }}${{ matrix.asset_ext }}"
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            powershell Compress-Archive -Path "src-tauri/target/${{ matrix.target }}/release/vuio-tower.exe" -DestinationPath "release-out/$ASSET_NAME"
+          else
+            tar -czf "release-out/$ASSET_NAME" -C "src-tauri/target/${{ matrix.target }}/release" "vuio-tower"
+          fi
+
+      - name: Upload artifact for release
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifact-${{ matrix.os-arch }}
+          path: release-out/*
+
+  create_github_release:
+    name: Create GitHub Release
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.task_to_run == 'release')
+    runs-on: ubuntu-latest
+    needs: build_release_artifacts
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create GitHub Release and Upload Artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.ref_name }}
+          draft: true
+          files: release-artifacts/*/*

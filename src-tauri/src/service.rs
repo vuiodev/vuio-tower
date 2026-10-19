@@ -2,8 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
-use vuio_core::lifecycle::RuntimeOptions;
-use vuio_core::runtime::{RuntimeHandle, RuntimeStatus, VuioRuntime};
+use vuio_core::runtime::{Runtime, RuntimeHandle, RuntimeOptions, RuntimeStatus};
 
 pub const DEFAULT_SERVER_NAME: &str = "VuIO";
 
@@ -79,11 +78,11 @@ impl ServiceState {
 
         ensure_config_exists()?;
         let (config_path, _, log_path) = get_vuio_paths();
-        let handle = VuioRuntime::start(RuntimeOptions {
-            config_path: Some(config_path.to_string_lossy().into_owned()),
-            log_file: Some(log_path.to_string_lossy().into_owned()),
-            ..RuntimeOptions::default()
-        });
+        let handle = Runtime::start(
+            RuntimeOptions::new()
+                .config_path(config_path)
+                .log_file(log_path),
+        );
         *runtime = Some(handle);
         self.running.store(true, Ordering::Release);
         Ok(())

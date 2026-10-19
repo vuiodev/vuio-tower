@@ -21,8 +21,8 @@ tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
 toml = "1.1"
 toml_edit = "0.25"
-dirs = "6.0"
-vuio-core = { path = "../../vuio/crates/vuio-core" }
+dirs = "7.0"
+vuio-core = { version = "0.0.50", features = ["unstable-internals"] }
 
 [profile.release]
 opt-level = 3
