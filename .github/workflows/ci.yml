@@ -129,15 +129,15 @@ jobs:
         run: |
           sudo dpkg --add-architecture arm64
 
-          # GitHub runners use Azure mirrors (amd64 only).
-          # Pin ALL existing source entries to amd64 and add ports.ubuntu.com for arm64.
-          sudo sed -i '/^Architectures:/d' /etc/apt/sources.list.d/ubuntu.sources
-          sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
-
-          cat <<'EOF' | sudo tee /etc/apt/sources.list.d/arm64-ports.list
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse
+          # Point ALL apt sources (amd64 + arm64) at ports.ubuntu.com, which
+          # serves both architectures from the same mirror. Keeping a single
+          # mirror keeps the arches' package versions in lockstep and avoids
+          # unmet exact-version cross-arch depends (e.g. libglib2.0-dev-bin-linux).
+          sudo rm -f /etc/apt/sources.list.d/ubuntu.sources
+          cat <<'EOF' | sudo tee /etc/apt/sources.list.d/ports.list
+          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
+          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse
+          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse
           EOF
 
           sudo apt-get update
@@ -159,6 +159,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Install Rosetta 2 (x86_64 tests on Apple Silicon)
+        if: matrix.target == 'x86_64-apple-darwin' && runner.arch == 'ARM64'
+        run: softwareupdate --install-rosetta --agree-to-license || true
 
       - name: Install npm dependencies
         run: npm ci || npm install
@@ -237,13 +241,15 @@ jobs:
         run: |
           sudo dpkg --add-architecture arm64
 
-          sudo sed -i '/^Architectures:/d' /etc/apt/sources.list.d/ubuntu.sources
-          sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
-
-          cat <<'EOF' | sudo tee /etc/apt/sources.list.d/arm64-ports.list
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse
+          # Point ALL apt sources (amd64 + arm64) at ports.ubuntu.com, which
+          # serves both architectures from the same mirror. Keeping a single
+          # mirror keeps the arches' package versions in lockstep and avoids
+          # unmet exact-version cross-arch depends (e.g. libglib2.0-dev-bin-linux).
+          sudo rm -f /etc/apt/sources.list.d/ubuntu.sources
+          cat <<'EOF' | sudo tee /etc/apt/sources.list.d/ports.list
+          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
+          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse
+          deb [arch=amd64,arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse
           EOF
 
           sudo apt-get update

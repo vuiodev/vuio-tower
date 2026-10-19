@@ -21,14 +21,8 @@ tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
 toml = "1.1"
 toml_edit = "0.25"
-dirs = "6.0"
+dirs = "7.0"
 vuio-core = { version = "0.0.50", features = ["unstable-internals"] }
-
-[patch.crates-io]
-vuio-core = { path = "../../vuio/crates/vuio-core" }
-vuio-codec-core = { path = "../../vuio/crates/vuio-codec-core" }
-vuio-codec-dts = { path = "../../vuio/crates/vuio-codec-dts" }
-vuio-codec-ac3 = { path = "../../vuio/crates/vuio-codec-ac3" }
 
 [profile.release]
 opt-level = 3
